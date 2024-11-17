@@ -1,0 +1,60 @@
+version: "3"
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6009:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 7
+    networks:
+      - test_net
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./data/redis:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+
+  cassandra:
+    image: cassandra:latest
+    ports:
+      - "9002:9042"
+    deploy:
+      resources:
+        limits:
+          memory: 2GiB
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe cluster"]
+      interval: 10s
+      timeout: 5s
+      retries: 7
+    networks:
+      - test_net
+    volumes:
+      - ./cassandra/logback.xml:/etc/cassandra/logback.xml
+    command: ["cassandra", "-f"]
+
+  main:
+    build: .
+    command: python main.py
+    depends_on:
+      redis:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+    environment:
+      - CASSANDRA_HOST=cassandra
+      - CASSANDRA_PORT=9042
+      - CASSANDRA_HOST_EXT=172.17.0.1 # $ ip addr show docker0
+      - CASSANDRA_PORT_EXT=9002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_HOST_EXT=172.17.0.1 # $ ip addr show docker0
+      - REDIS_PORT_EXT=6009
+      - CASS_DRIVER_NO_EXTENSIONS=1
+    networks:
+      - test_net
+
+networks:
+  test_net:
